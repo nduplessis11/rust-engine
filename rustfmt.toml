@@ -1,0 +1,6 @@
+max_width = 80
+use_small_heuristics = "Max"
+fn_params_layout = "Tall"
+struct_lit_width = 40
+struct_variant_width = 40
+chain_width = 40
