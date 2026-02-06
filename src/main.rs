@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::WindowEvent;
+use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -11,7 +11,7 @@ use winit::window::{Window, WindowId};
 use softbuffer::{Context, Surface};
 
 struct App {
-    state: Option<GraphicsState>,
+    gfx_state: Option<GraphicsState>,
 }
 
 impl ApplicationHandler for App {
@@ -26,7 +26,7 @@ impl ApplicationHandler for App {
 
         let state = GraphicsState::new(window);
         state.window.request_redraw();
-        self.state = Some(state);
+        self.gfx_state = Some(state);
     }
 
     fn window_event(
@@ -35,10 +35,10 @@ impl ApplicationHandler for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        let Some(state) = self.state.as_mut() else {
+        let Some(gfx_state) = self.gfx_state.as_mut() else {
             return;
         };
-        if state.window.id() != window_id {
+        if gfx_state.window.id() != window_id {
             return;
         }
 
@@ -47,43 +47,76 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render();
+                gfx_state.render();
             }
             WindowEvent::Resized(_) => {
-                state.window.request_redraw();
+                gfx_state.window.request_redraw();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::KeyW) => {
-                            state.square_pos_y =
-                                state.square_pos_y.saturating_sub(20);
-                            state.window.request_redraw();
+                            gfx_state.square_pos_y = gfx_state
+                                .square_pos_y
+                                .saturating_sub(20);
+                            gfx_state.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyA) => {
-                            state.square_pos_x =
-                                state.square_pos_x.saturating_sub(20);
-                            state.window.request_redraw();
+                            gfx_state.square_pos_x = gfx_state
+                                .square_pos_x
+                                .saturating_sub(20);
+                            gfx_state.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyS) => {
-                            let (_, max_pos_y) = state.max_square_pos();
+                            let (_, max_pos_y) = gfx_state.max_square_pos();
 
-                            state.square_pos_y += 20;
-                            state.square_pos_y =
-                                state.square_pos_y.min(max_pos_y);
-                            state.window.request_redraw();
+                            gfx_state.square_pos_y += 20;
+                            gfx_state.square_pos_y =
+                                gfx_state.square_pos_y.min(max_pos_y);
+                            gfx_state.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyD) => {
-                            let (max_pos_x, _) = state.max_square_pos();
+                            let (max_pos_x, _) = gfx_state.max_square_pos();
 
-                            state.square_pos_x += 20;
-                            state.square_pos_x =
-                                state.square_pos_x.min(max_pos_x);
-                            state.window.request_redraw();
+                            gfx_state.square_pos_x += 20;
+                            gfx_state.square_pos_x =
+                                gfx_state.square_pos_x.min(max_pos_x);
+                            gfx_state.window.request_redraw();
                         }
                         _ => {}
                     }
                 }
+            }
+            WindowEvent::MouseInput { button, state, .. } => {
+                if state.is_pressed() {
+                    match button {
+                        MouseButton::Left => {
+                            println!("Left click!");
+                            let x = gfx_state.cursor_x as usize;
+                            let y = gfx_state.cursor_y as usize;
+
+                            let size = gfx_state.window.inner_size();
+                            let w = NonZeroU32::new(size.width.max(1)).unwrap();
+                            let h =
+                                NonZeroU32::new(size.height.max(1)).unwrap();
+
+                            let width = w.get() as usize;
+                            let height = h.get() as usize;
+
+                            let mw = width * 10 / 100;
+                            let mh = height * 10 / 100;
+
+                            gfx_state.square_pos_x = x.saturating_sub(mw / 2);
+                            gfx_state.square_pos_y = y.saturating_sub(mh / 2);
+                            gfx_state.window.request_redraw();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                gfx_state.cursor_x = position.x;
+                gfx_state.cursor_y = position.y;
             }
             _ => {
                 println!("Got event: {:?}", event);
@@ -98,6 +131,8 @@ struct GraphicsState {
     surface: Surface<Arc<Window>, Arc<Window>>,
     square_pos_x: usize,
     square_pos_y: usize,
+    cursor_x: f64,
+    cursor_y: f64,
 }
 
 impl GraphicsState {
@@ -127,6 +162,8 @@ impl GraphicsState {
             surface,
             square_pos_x: square_pos_x,
             square_pos_y: square_pos_y,
+            cursor_x: 0.0,
+            cursor_y: 0.0,
         }
     }
 
@@ -187,7 +224,7 @@ impl GraphicsState {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = App { state: None };
+    let mut app = App { gfx_state: None };
     let event_loop = EventLoop::new()?;
 
     event_loop.run_app(&mut app)?;
