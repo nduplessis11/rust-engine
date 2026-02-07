@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Instant;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -56,21 +57,21 @@ impl ApplicationHandler for App {
                 if event.state.is_pressed() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::KeyW) => {
-                            gfx_state.square_pos_y = gfx_state
-                                .square_pos_y
-                                .saturating_sub(20);
+                            gfx_state.square_pos_y -= 20.0;
+                            gfx_state.square_pos_y =
+                                gfx_state.square_pos_y.max(0.0);
                             gfx_state.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyA) => {
-                            gfx_state.square_pos_x = gfx_state
-                                .square_pos_x
-                                .saturating_sub(20);
+                            gfx_state.square_pos_x -= 20.0;
+                            gfx_state.square_pos_x =
+                                gfx_state.square_pos_x.max(0.0);
                             gfx_state.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyS) => {
                             let (_, max_pos_y) = gfx_state.max_square_pos();
 
-                            gfx_state.square_pos_y += 20;
+                            gfx_state.square_pos_y += 20.0;
                             gfx_state.square_pos_y =
                                 gfx_state.square_pos_y.min(max_pos_y);
                             gfx_state.window.request_redraw();
@@ -78,7 +79,7 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::KeyD) => {
                             let (max_pos_x, _) = gfx_state.max_square_pos();
 
-                            gfx_state.square_pos_x += 20;
+                            gfx_state.square_pos_x += 20.0;
                             gfx_state.square_pos_x =
                                 gfx_state.square_pos_x.min(max_pos_x);
                             gfx_state.window.request_redraw();
@@ -91,7 +92,6 @@ impl ApplicationHandler for App {
                 if state.is_pressed() {
                     match button {
                         MouseButton::Left => {
-                            println!("Left click!");
                             let x = gfx_state.cursor_x as usize;
                             let y = gfx_state.cursor_y as usize;
 
@@ -106,8 +106,10 @@ impl ApplicationHandler for App {
                             let mw = width * 10 / 100;
                             let mh = height * 10 / 100;
 
-                            gfx_state.square_pos_x = x.saturating_sub(mw / 2);
-                            gfx_state.square_pos_y = y.saturating_sub(mh / 2);
+                            gfx_state.square_pos_x =
+                                (x as f64) - (mw as f64 / 2.0);
+                            gfx_state.square_pos_y =
+                                (y as f64) - (mh as f64 / 2.0);
                             gfx_state.window.request_redraw();
                         }
                         _ => {}
@@ -129,8 +131,11 @@ struct GraphicsState {
     window: Arc<Window>,
     _context: Context<Arc<Window>>,
     surface: Surface<Arc<Window>, Arc<Window>>,
-    square_pos_x: usize,
-    square_pos_y: usize,
+    square_pos_x: f64,
+    square_pos_y: f64,
+    velocity_x: f64,
+    velocity_y: f64,
+    last_time_frame: Instant,
     cursor_x: f64,
     cursor_y: f64,
 }
@@ -153,8 +158,8 @@ impl GraphicsState {
         let mw = width * 10 / 100;
         let mh = height * 10 / 100;
 
-        let square_pos_x = width / 2 - mw / 2;
-        let square_pos_y = height / 2 - mh / 2;
+        let square_pos_x = (width / 2 - mw / 2) as f64;
+        let square_pos_y = (height / 2 - mh / 2) as f64;
 
         Self {
             window,
@@ -162,12 +167,23 @@ impl GraphicsState {
             surface,
             square_pos_x: square_pos_x,
             square_pos_y: square_pos_y,
+            velocity_x: 100.0,
+            velocity_y: 100.0,
+            last_time_frame: Instant::now(),
             cursor_x: 0.0,
             cursor_y: 0.0,
         }
     }
 
     fn render(&mut self) {
+        let dt = self
+            .last_time_frame
+            .elapsed()
+            .as_secs_f64();
+        self.last_time_frame = Instant::now();
+
+        let (max_pos_x, max_pos_y) = self.max_square_pos();
+
         let size = self.window.inner_size();
         let w = NonZeroU32::new(size.width.max(1)).unwrap();
         let h = NonZeroU32::new(size.height.max(1)).unwrap();
@@ -188,11 +204,23 @@ impl GraphicsState {
         let mw = width * 10 / 100;
         let mh = height * 10 / 100;
 
-        let square_start_x = self.square_pos_x.min(width);
+        self.square_pos_x = self.square_pos_x + (self.velocity_x * dt);
+        self.square_pos_y = self.square_pos_y + (self.velocity_y * dt);
+
+        let square_start_x = (self.square_pos_x as usize).min(width);
         let square_end_x = (square_start_x + mw).min(width);
 
-        let square_start_y = self.square_pos_y.min(height);
+        let square_start_y = (self.square_pos_y as usize).min(height);
         let square_end_y = (square_start_y + mh).min(height);
+
+        if square_end_x >= width || square_start_x <= 0 {
+            self.velocity_x = -self.velocity_x;
+            self.square_pos_x = self.square_pos_x.clamp(0.0, max_pos_x);
+        }
+        if square_end_y >= height || square_start_y <= 0 {
+            self.velocity_y = -self.velocity_y;
+            self.square_pos_y = self.square_pos_y.clamp(0.0, max_pos_y);
+        }
 
         for y in square_start_y..square_end_y {
             for x in square_start_x..square_end_x {
@@ -203,18 +231,20 @@ impl GraphicsState {
         buffer
             .present()
             .expect("present failed");
+
+        self.window.request_redraw();
     }
 
-    fn max_square_pos(&self) -> (usize, usize) {
+    fn max_square_pos(&self) -> (f64, f64) {
         let size = self.window.inner_size();
         let w = NonZeroU32::new(size.width.max(1)).unwrap();
         let h = NonZeroU32::new(size.height.max(1)).unwrap();
 
-        let width = w.get() as usize;
-        let height = h.get() as usize;
+        let width = w.get() as f64;
+        let height = h.get() as f64;
 
-        let mw = width * 10 / 100;
-        let mh = height * 10 / 100;
+        let mw = width * 0.1;
+        let mh = height * 0.1;
 
         let max_pos_x = width - mw;
         let max_pos_y = height - mh;
